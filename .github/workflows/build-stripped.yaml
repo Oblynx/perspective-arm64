@@ -1,0 +1,286 @@
+#  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+#  ┃ ██████ ██████ ██████       █      █      █      █      █ █▄  ▀███ █       ┃
+#  ┃ ▄▄▄▄▄█ █▄▄▄▄▄ ▄▄▄▄▄█  ▀▀▀▀▀█▀▀▀▀▀ █ ▀▀▀▀▀█ ████████▌▐███ ███▄  ▀█ █ ▀▀▀▀▀ ┃
+#  ┃ █▀▀▀▀▀ █▀▀▀▀▀ █▀██▀▀ ▄▄▄▄▄ █ ▄▄▄▄▄█ ▄▄▄▄▄█ ████████▌▐███ █████▄   █ ▄▄▄▄▄ ┃
+#  ┃ █      ██████ █  ▀█▄       █ ██████      █      ███▌▐███ ███████▄ █       ┃
+#  ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+#  ┃ Copyright (c) 2017, the Perspective Authors.                              ┃
+#  ┃ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ ┃
+#  ┃ This file is part of the Perspective library, distributed under the terms ┃
+#  ┃ of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). ┃
+#  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+name: Build Status
+
+on:
+    push:
+        branches:
+            - master
+        tags:
+            - v*
+        paths-ignore:
+            - AUTHORS
+            - CHANGELOG.md
+            - CONTRIBUTING.md
+            - LICENSE
+            - README.md
+            - binder/
+            - docs/
+            - examples/
+            - rust/perspective-python/README.md
+    pull_request:
+        branches:
+            - master
+    workflow_dispatch:
+        inputs:
+            ci-full:
+                description: "Run Full CI"
+                required: false
+                type: boolean
+                default: false
+            ci-skip-cache:
+                description: "Omit Cache from CI run"
+                required: false
+                type: boolean
+                default: false
+            ci-skip-python:
+                description: "Skip Python components of CI"
+                required: false
+                type: boolean
+                default: false
+            ci-include-windows:
+                description: "Include Windows (Python) components of CI"
+                required: false
+                type: boolean
+                default: false
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+    cancel-in-progress: true
+
+jobs:
+    lint_and_docs:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os:
+                    - ubuntu-22.04
+                python-version:
+                    - 3.9
+                node-version: [20.x]
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Config
+              id: config-step
+              uses: ./.github/actions/config
+
+            - name: Initialize Build
+              id: init-step
+              uses: ./.github/actions/install-deps
+              with:
+                  skip_cache: ${{ steps.config-step.outputs.SKIP_CACHE }}
+
+            - name: Metadata Build
+              run: pnpm run build --ci
+              env:
+                  PACKAGE: "metadata"
+
+            - name: Lint
+              run: pnpm run lint --nightly
+
+            # - name: Docs Build
+            #   run: pnpm run docs
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: perspective-metadata
+                  path: |
+                      rust/perspective-server/cpp/
+                      rust/perspective-server/cmake/
+                      rust/perspective-client/src/
+                      rust/perspective-client/docs/
+                      rust/perspective-js/src/ts/
+                      rust/perspective-viewer/src/ts/
+                      rust/perspective-python/LICENSE_THIRDPARTY_cargo.yml
+
+    # ,-,---.       .    .  .-,--.     .  .
+    #  '|___/ . . . |  ,-|   '|__/ . . |- |-. ,-. ,-.
+    #  ,|   \ | | | |  | |   ,|    | | |  | | | | | |
+    # `-^---' `-^ ' `' `-^   `'    `-| `' ' ' `-' ' '
+    #                               /|
+    #                              `-'
+    build_python:
+        needs: [lint_and_docs]
+        runs-on: ${{ matrix.os }}
+        container: ${{ matrix.container }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os:
+                    - ubuntu-22.04-arm
+                arch:
+                    - aarch64
+                python-version:
+                    - 3.9
+                node-version: [20.x]
+                include:
+                    - os: ubuntu-22.04
+                      arch: x86_64
+                      python-version: 3.9
+                      container: pagmo2/manylinux228_x86_64_with_deps
+                    - os: ubuntu-22.04-arm
+                      arch: aarch64
+                      python-version: 3.9
+                is-release:
+                    - ${{ startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'master' }}
+                exclude:
+                    - os: windows-2022
+                      arch: aarch64
+                    - os: ubuntu-22.04
+                      arch: aarch64
+                    - os: ubuntu-22.04-arm
+                      arch: x86_64
+                    - os: macos-14
+                      is-release: false
+                    - os: macos-14
+                      arch: x86_64
+                    - os: windows-2022
+                      is-release: false
+
+        steps:
+            - name: Free up disk space
+              if: ${{ runner.os == 'Linux' }}
+              run: |
+                  rm -rf /__t/*
+
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Config
+              id: config-step
+              uses: ./.github/actions/config
+
+            # TODO: Remove run-id after testing arm64 build
+            - uses: actions/download-artifact@v4
+              with:
+                  name: perspective-metadata
+                  path: rust/
+                  #github-token: ${{ secrets.GITHUB_TOKEN }}
+                  #run-id: 19898608721
+
+            - name: Initialize Build
+              id: init-step
+              uses: ./.github/actions/install-deps
+              with:
+                  javascript: "false"
+                  arch: ${{ matrix.arch }}
+                  manylinux: ${{ matrix.container && 'true' || 'false' }}
+                  skip_cache: ${{ steps.config-step.outputs.SKIP_CACHE }}
+
+            - name: Python Build
+              run: pnpm run build
+              if: ${{ !contains(matrix.os, 'windows') }}
+              env:
+                  PACKAGE: "python"
+                  PSP_ARCH: ${{ matrix.arch }}
+                  PSP_ROOT_DIR: ${{ github.workspace }}
+                  PSP_BUILD_WHEEL: 1
+
+            - name: Python Build (Windows)
+              run: |
+                  New-Item -ItemType Directory -Path $env:CARGO_TARGET_DIR -Force
+                  pnpm run build
+              if: ${{ contains(matrix.os, 'windows') }}
+              env:
+                  CARGO_TARGET_DIR: D:\psp-rust
+                  PSP_CPP_BUILD_DIR: D:\psp-build
+                  PSP_ROOT_DIR: ${{ github.workspace }}
+                  PACKAGE: "python"
+                  PSP_ARCH: ${{ matrix.arch }}
+                  PSP_BUILD_WHEEL: 1
+
+            # Windows sucks lol
+            - uses: actions/upload-artifact@v4
+              if: ${{ runner.os == 'Windows' }}
+              with:
+                  name: perspective-python-dist-${{ matrix.arch}}-${{ matrix.os }}-${{ matrix.python-version }}
+                  path: D:\psp-rust\wheels\*.whl
+
+            - uses: actions/upload-artifact@v4
+              # if: ${{ runner.os != 'Windows' }}
+              with:
+                  name: perspective-python-dist-${{ matrix.arch}}-${{ matrix.os }}-${{ matrix.python-version }}
+                  path: rust/target/wheels/*.whl
+
+
+    # ,--,--'      .   .-,--.     .  .
+    # `- | ,-. ,-. |-   '|__/ . . |- |-. ,-. ,-.
+    #  , | |-' `-. |    ,|    | | |  | | | | | |
+    #  `-' `-' `-' `'   `'    `-| `' ' ' `-' ' '
+    #                          /|
+    #                         `-'
+    test_python:
+        needs: [build_python]
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os:
+                    - ubuntu-22.04-arm
+                arch:
+                    - x86_64
+                    - aarch64
+                python-version:
+                    - 3.9
+                    # - 3.12
+                node-version: [20.x]
+                is-release:
+                    - ${{ startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'master' }}
+                exclude:
+                    - os: macos-14
+                      is-release: false
+                    - os: macos-14
+                      is-release: false
+                    - os: windows-2022
+                      is-release: false
+                    - os: macos-14
+                      arch: aarch64
+                    - os: macos-14
+                      arch: x86_64
+                    - os: windows-2022
+                      arch: aarch64
+                    - os: ubuntu-22.04
+                      arch: aarch64
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Config
+              id: config-step
+              uses: ./.github/actions/config
+
+            - name: Initialize Build
+              uses: ./.github/actions/install-deps
+              with:
+                  rust: "false"
+                  cpp: "false"
+                  skip_cache: ${{ steps.config-step.outputs.SKIP_CACHE }}
+
+            - uses: actions/download-artifact@v4
+              with:
+                  # the macos-14 runner tests artifacts built on macos-14
+                  name: perspective-python-dist-${{ matrix.arch }}-${{ matrix.os == 'macos-14' && 'macos-14' || matrix.os }}-${{ matrix.python-version }}
+                  #github-token: ${{ secrets.GITHUB_TOKEN }}
+                  #run-id: 19898608721
+
+            - uses: ./.github/actions/install-wheel
+
+            - name: Run Tests
+              run: pnpm run test
+              env:
+                  PACKAGE: "python"
+                  # PSP_USE_CCACHE: 1
