@@ -135,6 +135,7 @@ jobs:
                     - os: ubuntu-22.04-arm
                       arch: aarch64
                       python-version: 3.9
+                      container: pagmo2/manylinux228_aarch64_with_deps
                 is-release:
                     - ${{ startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'master' }}
                 exclude:

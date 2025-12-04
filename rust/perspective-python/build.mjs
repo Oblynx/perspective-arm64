@@ -59,6 +59,13 @@ if (process.platform !== "win32") {
 const build_wheel = !!process.env.PSP_BUILD_WHEEL || is_pyodide;
 const build_sdist = !!process.env.PSP_BUILD_SDIST;
 
+// Detect native architecture
+const os = await import("node:os");
+const nativeArch = os.arch(); // 'arm64', 'x64', etc.
+const isNativeArm64 = nativeArch === "arm64" && process.env.PSP_ARCH === "aarch64";
+const isNativeX64 = nativeArch === "x64" && process.env.PSP_ARCH === "x86_64";
+const isNativeBuild = isNativeArm64 || isNativeX64;
+
 let target = "";
 if (is_pyodide) {
     target = `--target=wasm32-unknown-emscripten -i${python_version}`;
@@ -72,7 +79,12 @@ if (is_pyodide) {
 } else if (process.env.PSP_ARCH === "x86_64" && process.platform === "linux") {
     target = "--target=x86_64-unknown-linux-gnu --compatibility manylinux_2_28";
 } else if (process.env.PSP_ARCH === "aarch64" && process.platform === "linux") {
-    target = "--target=aarch64-unknown-linux-gnu --compatibility manylinux_2_28";
+    // When building natively on arm64, don't specify --target to avoid cross-compilation issues
+    if (isNativeBuild) {
+        target = "--compatibility manylinux_2_28";
+    } else {
+        target = "--target=aarch64-unknown-linux-gnu --compatibility manylinux_2_28";
+    }
 }
 
 if (build_wheel) {
