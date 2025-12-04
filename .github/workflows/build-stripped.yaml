@@ -59,53 +59,6 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    lint_and_docs:
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                os:
-                    - ubuntu-22.04
-                python-version:
-                    - 3.9
-                node-version: [20.x]
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-
-            - name: Config
-              id: config-step
-              uses: ./.github/actions/config
-
-            - name: Initialize Build
-              id: init-step
-              uses: ./.github/actions/install-deps
-              with:
-                  skip_cache: ${{ steps.config-step.outputs.SKIP_CACHE }}
-
-            - name: Metadata Build
-              run: pnpm run build --ci
-              env:
-                  PACKAGE: "metadata"
-
-            - name: Lint
-              run: pnpm run lint --nightly
-
-            # - name: Docs Build
-            #   run: pnpm run docs
-
-            - uses: actions/upload-artifact@v4
-              with:
-                  name: perspective-metadata
-                  path: |
-                      rust/perspective-server/cpp/
-                      rust/perspective-server/cmake/
-                      rust/perspective-client/src/
-                      rust/perspective-client/docs/
-                      rust/perspective-js/src/ts/
-                      rust/perspective-viewer/src/ts/
-                      rust/perspective-python/LICENSE_THIRDPARTY_cargo.yml
 
     # ,-,---.       .    .  .-,--.     .  .
     #  '|___/ . . . |  ,-|   '|__/ . . |- |-. ,-. ,-.
@@ -114,7 +67,6 @@ jobs:
     #                               /|
     #                              `-'
     build_python:
-        needs: [lint_and_docs]
         runs-on: ${{ matrix.os }}
         container: ${{ matrix.container }}
         strategy:
@@ -128,10 +80,6 @@ jobs:
                     - 3.9
                 node-version: [20.x]
                 include:
-                    - os: ubuntu-22.04
-                      arch: x86_64
-                      python-version: 3.9
-                      container: pagmo2/manylinux228_x86_64_with_deps
                     - os: ubuntu-22.04-arm
                       arch: aarch64
                       python-version: 3.9
@@ -170,8 +118,8 @@ jobs:
               with:
                   name: perspective-metadata
                   path: rust/
-                  #github-token: ${{ secrets.GITHUB_TOKEN }}
-                  #run-id: 19898608721
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: 19939335363
 
             - name: Initialize Build
               id: init-step
@@ -275,8 +223,8 @@ jobs:
               with:
                   # the macos-14 runner tests artifacts built on macos-14
                   name: perspective-python-dist-${{ matrix.arch }}-${{ matrix.os == 'macos-14' && 'macos-14' || matrix.os }}-${{ matrix.python-version }}
-                  #github-token: ${{ secrets.GITHUB_TOKEN }}
-                  #run-id: 19898608721
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: 19939335363
 
             - uses: ./.github/actions/install-wheel
 
